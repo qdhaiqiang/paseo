@@ -1,14 +1,17 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { ScrollView, View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   SupervisorClient,
   type Rig,
   type Session,
   type StructuredMessage,
+  type TurnEvent,
 } from "./api/supervisor";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { AgentAvatar } from "./AgentAvatar";
+import { MessageComposer } from "./MessageComposer";
+import { useTranscriptStream } from "./useTranscriptStream";
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -43,12 +46,53 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   const [messages, setMessages] = useState<StructuredMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>("");
+  const [turnStatus, setTurnStatus] = useState<string>("");
 
   // Initialize API client
-  const client = new SupervisorClient({
+  const client = useMemo(() => new SupervisorClient({
     baseUrl: "http://localhost:8080",
     city: "main",
+  }), []);
+
+  // Handle incoming messages from SSE stream
+  const handleNewMessage = useCallback((message: StructuredMessage) => {
+    setMessages((prev) => {
+      // Check if message already exists
+      const exists = prev.some((m) => m.id === message.id);
+      if (exists) {
+        // Update existing message
+        return prev.map((m) => (m.id === message.id ? message : m));
+      }
+      // Add new message
+      return [...prev, message];
+    });
+  }, []);
+
+  // Handle turn lifecycle events
+  const handleTurnStarted = useCallback((event: TurnEvent) => {
+    setTurnStatus(`Turn started: ${event.turn_id.substring(0, 12)}...`);
+  }, []);
+
+  const handleTurnCompleted = useCallback((event: TurnEvent) => {
+    setTurnStatus("");
+  }, []);
+
+  const handleTurnFailed = useCallback((event: TurnEvent) => {
+    setTurnStatus(`Turn failed: ${event.error_message}`);
+    setError(event.error_message || "Turn failed");
+  }, []);
+
+  // Connect to SSE transcript stream
+  const { cursor } = useTranscriptStream({
+    sessionId: selectedSession?.id || null,
+    baseUrl: client.config.baseUrl,
+    city: client.config.city,
+    onMessageReceived: handleNewMessage,
+    onTurnStarted: handleTurnStarted,
+    onTurnCompleted: handleTurnCompleted,
+    onTurnFailed: handleTurnFailed,
   });
 
   useEffect(() => {
@@ -112,6 +156,47 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
       setError(err instanceof Error ? err.message : "Failed to create session");
     }
   }
+
+  // Handle sending a new message
+  const handleSendMessage = useCallback(async (messageText: string, clientMessageId: string) => {
+    if (!selectedSession) return;
+
+    setSending(true);
+    setError("");
+    setTurnStatus("Sending message...");
+
+    try {
+      // Submit message to supervisor
+      const result = await client.submitMessage(
+        selectedSession.id,
+        messageText,
+        clientMessageId
+      );
+
+      console.log("Message submitted:", result.request_id, "turn:", result.turn_id);
+      setTurnStatus(`Message sent. Turn: ${result.turn_id?.substring(0, 12) || "pending"}...`);
+
+      // Optimistically add user message to transcript
+      const userMessage: StructuredMessage = {
+        id: `temp-${clientMessageId}`,
+        client_message_id: clientMessageId,
+        turn_id: result.turn_id,
+        role: "user",
+        status: "final",
+        blocks: [{ kind: "text", text: messageText }],
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, userMessage]);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to send message";
+      setError(errorMsg);
+      setTurnStatus("");
+      throw err;
+    } finally {
+      setSending(false);
+    }
+  }, [selectedSession, client]);
 
   const renderSidebar = () => (
     <View style={[styles.sidebar, { borderColor: theme.colors.border }]}>
@@ -260,14 +345,31 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
               isActive={true}
               theme={theme}
             />
+            {turnStatus ? (
+              <Text style={{ fontSize: 11, opacity: 0.6, marginTop: 4, color: theme.colors.foreground }}>
+                {turnStatus}
+              </Text>
+            ) : null}
           </View>
 
           {/* Transcript Viewer */}
-          <TranscriptViewer
-            messages={messages}
-            theme={theme}
-            isLoading={loadingTranscript}
-          />
+          <View style={{ flex: 1 }}>
+            <TranscriptViewer
+              messages={messages}
+              theme={theme}
+              isLoading={loadingTranscript}
+            />
+          </View>
+
+          {/* Message Composer */}
+          <View style={{ borderTopWidth: 1, borderColor: theme.colors.border }}>
+            <MessageComposer
+              onSend={handleSendMessage}
+              disabled={!selectedSession}
+              loading={sending}
+              theme={theme}
+            />
+          </View>
         </View>
       );
     }
