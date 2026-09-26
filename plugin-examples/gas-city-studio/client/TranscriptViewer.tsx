@@ -22,9 +22,17 @@ interface TranscriptViewerProps {
   messages: StructuredMessage[];
   theme: any;
   isLoading?: boolean;
+  fontSize?: "small" | "medium" | "large";
 }
 
-export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewerProps) {
+const FONT_SIZES = {
+  small: { text: 12, header: 11, timestamp: 9 },
+  medium: { text: 14, header: 12, timestamp: 10 },
+  large: { text: 16, header: 14, timestamp: 11 },
+};
+
+export function TranscriptViewer({ messages, theme, isLoading, fontSize = "medium" }: TranscriptViewerProps) {
+  const fontSizes = FONT_SIZES[fontSize];
   const getMessageStyle = (role: string) => {
     switch (role) {
       case "user":
@@ -55,7 +63,7 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
     switch (block.kind) {
       case "text":
         return (
-          <Text key={index} style={[styles.textBlock, { color: theme.colors.foreground }]}>
+          <Text key={index} style={[styles.textBlock, { color: theme.colors.foreground, fontSize: fontSizes.text }]}>
             {block.text}
           </Text>
         );
@@ -63,11 +71,11 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
       case "tool_use":
         return (
           <View key={index} style={styles.toolBlock}>
-            <Text style={[styles.toolName, { color: theme.colors.foreground }]}>
+            <Text style={[styles.toolName, { color: theme.colors.foreground, fontSize: fontSizes.header }]}>
               🔧 {block.name || "Unknown Tool"}
             </Text>
             {block.input && (
-              <Text style={{ fontSize: 11, color: theme.colors.foreground, opacity: 0.7 }}>
+              <Text style={{ fontSize: fontSizes.timestamp, color: theme.colors.foreground, opacity: 0.7 }}>
                 Input: {JSON.stringify(block.input, null, 2)}
               </Text>
             )}
@@ -77,11 +85,11 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
       case "tool_result":
         return (
           <View key={index} style={[styles.toolBlock, { backgroundColor: "#e8f5e9" }]}>
-            <Text style={[styles.toolName, { color: "#2e7d32" }]}>
+            <Text style={[styles.toolName, { color: "#2e7d32", fontSize: fontSizes.header }]}>
               ✅ Result
             </Text>
             {block.output && (
-              <Text style={{ fontSize: 11, color: "#2e7d32" }}>
+              <Text style={{ fontSize: fontSizes.timestamp, color: "#2e7d32" }}>
                 {typeof block.output === "string" ? block.output : JSON.stringify(block.output)}
               </Text>
             )}
@@ -91,7 +99,7 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
       case "file":
         return (
           <View key={index} style={styles.toolBlock}>
-            <Text style={[styles.toolName, { color: theme.colors.foreground }]}>
+            <Text style={[styles.toolName, { color: theme.colors.foreground, fontSize: fontSizes.header }]}>
               📄 {block.file_path || "File"}
             </Text>
           </View>
@@ -125,18 +133,18 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
           ]}
         >
           <View style={styles.messageHeader}>
-            <Text style={[styles.roleLabel, { color: getRoleColor(message.role) }]}>
+            <Text style={[styles.roleLabel, { color: getRoleColor(message.role), fontSize: fontSizes.header }]}>
               {message.role === "user" ? "👤 User" : message.role === "assistant" ? "🤖 Assistant" : "⚙️ System"}
             </Text>
             {message.timestamp && (
-              <Text style={[styles.timestamp, { color: theme.colors.foreground }]}>
+              <Text style={[styles.timestamp, { color: theme.colors.foreground, fontSize: fontSizes.timestamp }]}>
                 {new Date(message.timestamp).toLocaleTimeString()}
               </Text>
             )}
           </View>
 
           {message.model && (
-            <Text style={[styles.modelLabel, { color: theme.colors.foreground }]}>
+            <Text style={[styles.modelLabel, { color: theme.colors.foreground, fontSize: fontSizes.timestamp }]}>
               Model: {message.model}
             </Text>
           )}
@@ -144,11 +152,11 @@ export function TranscriptViewer({ messages, theme, isLoading }: TranscriptViewe
           {message.blocks.map((block, index) => renderBlock(block, index))}
 
           {message.status === "partial" && (
-            <Text style={styles.partialIndicator}>Streaming...</Text>
+            <Text style={[styles.partialIndicator, { fontSize: fontSizes.timestamp }]}>Streaming...</Text>
           )}
 
           {message.client_message_id && (
-            <Text style={{ fontSize: 9, opacity: 0.5, marginTop: 4 }}>
+            <Text style={{ fontSize: fontSizes.timestamp * 0.8, opacity: 0.5, marginTop: 4 }}>
               msg: {message.client_message_id}
             </Text>
           )}

@@ -1,4 +1,5 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
+import { useSettings, type SettingsState } from "@getpaseo/plugin/client";
 import { ScrollView, View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -12,6 +13,9 @@ import { TranscriptViewer } from "./TranscriptViewer";
 import { AgentAvatar } from "./AgentAvatar";
 import { MessageComposer } from "./MessageComposer";
 import { useTranscriptStream } from "./useTranscriptStream";
+import { gasCityPreferences } from "../shared/preferences";
+
+type Preferences = Extract<SettingsState<typeof gasCityPreferences.schema>, { status: "ready" }>;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -50,11 +54,18 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   const [error, setError] = useState<string>("");
   const [turnStatus, setTurnStatus] = useState<string>("");
 
-  // Initialize API client
-  const client = useMemo(() => new SupervisorClient({
-    baseUrl: "http://localhost:8080",
-    city: "main",
-  }), []);
+  // Load settings
+  const settings = useSettings(gasCityPreferences);
+
+  // Initialize API client with settings values
+  const client = useMemo(() => {
+    const supervisorUrl = settings.status === "ready" ? settings.values.supervisorUrl : "http://localhost:8080";
+    const city = settings.status === "ready" ? settings.values.city : "main";
+    return new SupervisorClient({
+      baseUrl: supervisorUrl,
+      city: city,
+    });
+  }, [settings]);
 
   // Handle incoming messages from SSE stream
   const handleNewMessage = useCallback((message: StructuredMessage) => {
@@ -358,6 +369,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
               messages={messages}
               theme={theme}
               isLoading={loadingTranscript}
+              fontSize={settings.status === "ready" ? settings.values.transcriptFontSize : "medium"}
             />
           </View>
 
