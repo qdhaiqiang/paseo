@@ -1,5 +1,6 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { useSettings, type SettingsState } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { ScrollView, View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -51,8 +52,10 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   const [loading, setLoading] = useState(true);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string>("");
   const [turnStatus, setTurnStatus] = useState<string>("");
+
+  // Toast notifications
+  const toast = useToast();
 
   // Load settings
   const settings = useSettings(gasCityPreferences);
@@ -83,17 +86,20 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
 
   // Handle turn lifecycle events
   const handleTurnStarted = useCallback((event: TurnEvent) => {
-    setTurnStatus(`Turn started: ${event.turn_id.substring(0, 12)}...`);
+    setTurnStatus(`Processing: ${event.turn_id.substring(0, 12)}...`);
   }, []);
 
   const handleTurnCompleted = useCallback((event: TurnEvent) => {
     setTurnStatus("");
-  }, []);
+    toast.show("Response received", { variant: "success" });
+  }, [toast]);
 
   const handleTurnFailed = useCallback((event: TurnEvent) => {
-    setTurnStatus(`Turn failed: ${event.error_message}`);
-    setError(event.error_message || "Turn failed");
-  }, []);
+    setTurnStatus("");
+    const errorMsg = event.error_message || "Unknown error";
+    toast.error(`Turn failed: ${errorMsg}`);
+    console.error("Turn failed:", event);
+  }, [toast]);
 
   // Connect to SSE transcript stream
   const { cursor } = useTranscriptStream({
@@ -113,7 +119,6 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   async function loadData() {
     try {
       setLoading(true);
-      setError("");
 
       const rigsData = await client.getRigs();
       setRigs(rigsData);
@@ -123,8 +128,12 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
         const sessionsData = await client.getSessions(rigsData[0].id);
         setSessions(sessionsData);
       }
+
+      toast.show(`Loaded ${rigsData.length} rig(s)`, { variant: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      const errorMsg = err instanceof Error ? err.message : "Failed to load data";
+      toast.error(`Connection error: ${errorMsg}`);
+      console.error("Failed to load rigs:", err);
     } finally {
       setLoading(false);
     }
@@ -138,8 +147,11 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     try {
       const sessionsData = await client.getSessions(rigId);
       setSessions(sessionsData);
+      toast.show(`Loaded ${sessionsData.length} session(s)`, { variant: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sessions");
+      const errorMsg = err instanceof Error ? err.message : "Failed to load sessions";
+      toast.error(errorMsg);
+      console.error("Failed to load sessions:", err);
     }
   }
 
@@ -150,30 +162,41 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     try {
       const snapshot = await client.getTranscriptSnapshot(session.id);
       setMessages(snapshot.messages || []);
+      toast.show(`Loaded transcript: ${snapshot.messages?.length || 0} message(s)`, { variant: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load transcript");
+      const errorMsg = err instanceof Error ? err.message : "Failed to load transcript";
+      toast.error(errorMsg);
+      console.error("Failed to load transcript:", err);
     } finally {
       setLoadingTranscript(false);
     }
   }
 
   async function handleCreateSession() {
-    if (!selectedRig) return;
+    if (!selectedRig) {
+      toast.error("Please select a rig first");
+      return;
+    }
     try {
       const newSession = await client.createSession(selectedRig);
       setSessions([...sessions, newSession]);
       handleSessionSelect(newSession);
+      toast.show("Session created successfully", { variant: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create session");
+      const errorMsg = err instanceof Error ? err.message : "Failed to create session";
+      toast.error(errorMsg);
+      console.error("Failed to create session:", err);
     }
   }
 
   // Handle sending a new message
   const handleSendMessage = useCallback(async (messageText: string, clientMessageId: string) => {
-    if (!selectedSession) return;
+    if (!selectedSession) {
+      toast.error("No session selected");
+      return;
+    }
 
     setSending(true);
-    setError("");
     setTurnStatus("Sending message...");
 
     try {
@@ -185,7 +208,8 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
       );
 
       console.log("Message submitted:", result.request_id, "turn:", result.turn_id);
-      setTurnStatus(`Message sent. Turn: ${result.turn_id?.substring(0, 12) || "pending"}...`);
+      setTurnStatus(`Turn active: ${result.turn_id?.substring(0, 12) || "processing"}...`);
+      toast.show("Message sent", { variant: "success" });
 
       // Optimistically add user message to transcript
       const userMessage: StructuredMessage = {
@@ -201,13 +225,14 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
       setMessages((prev) => [...prev, userMessage]);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to send message";
-      setError(errorMsg);
+      toast.error(errorMsg);
       setTurnStatus("");
+      console.error("Failed to send message:", err);
       throw err;
     } finally {
       setSending(false);
     }
-  }, [selectedSession, client]);
+  }, [selectedSession, client, toast]);
 
   const renderSidebar = () => (
     <View style={[styles.sidebar, { borderColor: theme.colors.border }]}>
@@ -393,15 +418,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={{ marginTop: 16, color: theme.colors.foreground }}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-        <Text style={{ color: "#FF3B30", fontSize: 14 }}>Error: {error}</Text>
+        <Text style={{ marginTop: 16, color: theme.colors.foreground }}>Loading rigs and sessions...</Text>
       </View>
     );
   }
