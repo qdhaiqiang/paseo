@@ -115,8 +115,8 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   // Connect to SSE transcript stream
   useTranscriptStream({
     sessionId: selectedSession?.id || null,
-    baseUrl: client.config.baseUrl,
-    city: client.config.city,
+    baseUrl: client.baseUrl,
+    city: client.city,
     onMessageReceived: handleNewMessage,
     onTurnStarted: handleTurnStarted,
     onTurnCompleted: handleTurnCompleted,
@@ -358,20 +358,20 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   const renderTabBar = () => (
     <View style={[styles.tabBar, { borderColor: theme.colors.border }]}>
       <Pressable
-        style={[styles.tab, tab === "sessions" && { borderBottomColor: theme.colors.primary }]}
+        style={[styles.tab, tab === "sessions" && { borderBottomColor: theme.colors.accent }]}
         onPress={() => setTab("sessions")}
       >
         <Text
           style={[
             styles.tabLabel,
-            { color: tab === "sessions" ? theme.colors.primary : theme.colors.foreground },
+            { color: tab === "sessions" ? theme.colors.accent : theme.colors.foreground },
           ]}
         >
           Sessions
         </Text>
       </Pressable>
       <Pressable
-        style={[styles.tab, tab === "transcript" && { borderBottomColor: theme.colors.primary }]}
+        style={[styles.tab, tab === "transcript" && { borderBottomColor: theme.colors.accent }]}
         onPress={() => setTab("transcript")}
         disabled={!selectedSession}
       >
@@ -379,7 +379,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
           style={[
             styles.tabLabel,
             {
-              color: tab === "transcript" ? theme.colors.primary : theme.colors.foreground,
+              color: tab === "transcript" ? theme.colors.accent : theme.colors.foreground,
               opacity: selectedSession ? 1 : 0.4,
             },
           ]}
@@ -487,7 +487,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="large" color={theme.colors.accent} />
         <Text style={{ marginTop: 16, color: theme.colors.foreground }}>
           Loading rigs and sessions...
         </Text>
@@ -496,7 +496,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface0 }]}>
       <View
         style={[
           styles.header,

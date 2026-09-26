@@ -74,6 +74,15 @@ export class SupervisorClient {
     this.config = config;
   }
 
+  // Public getters for config values
+  get baseUrl(): string {
+    return this.config.baseUrl;
+  }
+
+  get city(): string {
+    return this.config.city;
+  }
+
   private url(path: string): string {
     return `${this.config.baseUrl}/v0/city/${this.config.city}${path}`;
   }

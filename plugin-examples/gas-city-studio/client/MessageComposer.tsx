@@ -89,18 +89,15 @@ export function MessageComposer({ onSend, disabled, loading, theme }: MessageCom
           onChangeText={setText}
           multiline
           editable={!disabled && !loading}
-          onSubmitEditing={(e) => {
-            if (!e.nativeEvent.shiftKey) {
-              handleSend();
-            }
-          }}
+          returnKeyType="send"
+          onSubmitEditing={handleSend}
         />
 
         <Pressable
           style={[
             styles.sendButton,
             {
-              backgroundColor: canSend ? theme.colors.primary : theme.colors.surface2,
+              backgroundColor: canSend ? theme.colors.accent : theme.colors.surface2,
             },
             !canSend && styles.sendButtonDisabled,
           ]}

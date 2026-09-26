@@ -52,7 +52,7 @@ export function useTranscriptStream({
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = setTimeout(() => {
         console.log("[TranscriptStream] Reconnecting...");
         connect();
       }, 3000);
