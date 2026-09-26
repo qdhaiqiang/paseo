@@ -28,16 +28,43 @@ export interface StructuredMessage {
   id: string;
   client_message_id?: string;
   turn_id?: string;
-  role: string;
+  role: "user" | "assistant" | "system";
   provider?: string;
   timestamp?: string;
   model?: string;
-  status: string;
-  blocks: Array<{
-    kind: string;
-    text?: string;
-    [key: string]: any;
-  }>;
+  stop_reason?: string;
+  status: "unknown" | "final" | "partial" | "superseded";
+  blocks: MessageBlock[];
+}
+
+export interface MessageBlock {
+  kind: "text" | "tool_use" | "tool_result" | "image" | "file";
+  text?: string;
+  tool_use_id?: string;
+  name?: string;
+  input?: any;
+  output?: any;
+  file_path?: string;
+  image_url?: string;
+  [key: string]: any;
+}
+
+export interface TranscriptSnapshot {
+  session_id: string;
+  messages: StructuredMessage[];
+  cursor?: {
+    resume_token?: string;
+  };
+}
+
+export interface TurnEvent {
+  type: "turn.started" | "turn.completed" | "turn.failed" | "turn.canceled";
+  turn_id: string;
+  session_id: string;
+  request_id?: string;
+  client_message_id?: string;
+  error_code?: string;
+  error_message?: string;
 }
 
 export class SupervisorClient {
@@ -100,5 +127,18 @@ export class SupervisorClient {
     const params = cursor ? `?cursor=${cursor}` : "";
     const url = this.url(`/session/${sessionId}/transcript/stream${params}`);
     return new EventSource(url);
+  }
+
+  async getTranscriptSnapshot(sessionId: string): Promise<TranscriptSnapshot> {
+    const response = await fetch(this.url(`/session/${sessionId}/transcript`));
+    if (!response.ok) throw new Error(`Failed to fetch transcript: ${response.statusText}`);
+    return response.json();
+  }
+
+  async stopSession(sessionId: string): Promise<void> {
+    const response = await fetch(this.url(`/session/${sessionId}/stop`), {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error(`Failed to stop session: ${response.statusText}`);
   }
 }
