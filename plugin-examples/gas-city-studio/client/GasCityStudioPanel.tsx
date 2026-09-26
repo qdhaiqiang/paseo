@@ -1,5 +1,5 @@
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useSettings, type SettingsState } from "@getpaseo/plugin/client";
+import { useSettings } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { ScrollView, View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -15,8 +15,6 @@ import { AgentAvatar } from "./AgentAvatar";
 import { MessageComposer } from "./MessageComposer";
 import { useTranscriptStream } from "./useTranscriptStream";
 import { gasCityPreferences } from "../shared/preferences";
-
-type Preferences = Extract<SettingsState<typeof gasCityPreferences.schema>, { status: "ready" }>;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -36,7 +34,13 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, justifyContent: "center", alignItems: "center", padding: 32 },
   emptyStateText: { fontSize: 16, marginBottom: 8 },
   emptyStateSubtext: { fontSize: 13, opacity: 0.6 },
-  button: { padding: 10, backgroundColor: "#007AFF", borderRadius: 6, alignItems: "center", marginTop: 8 },
+  button: {
+    padding: 10,
+    backgroundColor: "#007AFF",
+    borderRadius: 6,
+    alignItems: "center",
+    marginTop: 8,
+  },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 13 },
 });
 
@@ -62,7 +66,8 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
 
   // Initialize API client with settings values
   const client = useMemo(() => {
-    const supervisorUrl = settings.status === "ready" ? settings.values.supervisorUrl : "http://localhost:8080";
+    const supervisorUrl =
+      settings.status === "ready" ? settings.values.supervisorUrl : "http://localhost:8080";
     const city = settings.status === "ready" ? settings.values.city : "main";
     return new SupervisorClient({
       baseUrl: supervisorUrl,
@@ -89,20 +94,26 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     setTurnStatus(`Processing: ${event.turn_id.substring(0, 12)}...`);
   }, []);
 
-  const handleTurnCompleted = useCallback((event: TurnEvent) => {
-    setTurnStatus("");
-    toast.show("Response received", { variant: "success" });
-  }, [toast]);
+  const handleTurnCompleted = useCallback(
+    (_event: TurnEvent) => {
+      setTurnStatus("");
+      toast.show("Response received", { variant: "success" });
+    },
+    [toast],
+  );
 
-  const handleTurnFailed = useCallback((event: TurnEvent) => {
-    setTurnStatus("");
-    const errorMsg = event.error_message || "Unknown error";
-    toast.error(`Turn failed: ${errorMsg}`);
-    console.error("Turn failed:", event);
-  }, [toast]);
+  const handleTurnFailed = useCallback(
+    (event: TurnEvent) => {
+      setTurnStatus("");
+      const errorMsg = event.error_message || "Unknown error";
+      toast.error(`Turn failed: ${errorMsg}`);
+      console.error("Turn failed:", event);
+    },
+    [toast],
+  );
 
   // Connect to SSE transcript stream
-  const { cursor } = useTranscriptStream({
+  useTranscriptStream({
     sessionId: selectedSession?.id || null,
     baseUrl: client.config.baseUrl,
     city: client.config.city,
@@ -112,9 +123,23 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     onTurnFailed: handleTurnFailed,
   });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadData();
   }, []);
+
+  // Auto-connect to first session if enabled in settings
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (
+      settings.status === "ready" &&
+      settings.values.autoConnect &&
+      sessions.length > 0 &&
+      !selectedSession
+    ) {
+      handleSessionSelect(sessions[0]);
+    }
+  }, [settings, sessions, selectedSession]);
 
   async function loadData() {
     try {
@@ -162,7 +187,9 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     try {
       const snapshot = await client.getTranscriptSnapshot(session.id);
       setMessages(snapshot.messages || []);
-      toast.show(`Loaded transcript: ${snapshot.messages?.length || 0} message(s)`, { variant: "success" });
+      toast.show(`Loaded transcript: ${snapshot.messages?.length || 0} message(s)`, {
+        variant: "success",
+      });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to load transcript";
       toast.error(errorMsg);
@@ -190,49 +217,86 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   }
 
   // Handle sending a new message
-  const handleSendMessage = useCallback(async (messageText: string, clientMessageId: string) => {
-    if (!selectedSession) {
-      toast.error("No session selected");
-      return;
-    }
+  const handleSendMessage = useCallback(
+    async (messageText: string, clientMessageId: string) => {
+      if (!selectedSession) {
+        toast.error("No session selected");
+        return;
+      }
 
-    setSending(true);
-    setTurnStatus("Sending message...");
+      setSending(true);
+      setTurnStatus("Sending message...");
 
-    try {
-      // Submit message to supervisor
-      const result = await client.submitMessage(
-        selectedSession.id,
-        messageText,
-        clientMessageId
+      try {
+        // Submit message to supervisor
+        const result = await client.submitMessage(selectedSession.id, messageText, clientMessageId);
+
+        console.log("Message submitted:", result.request_id, "turn:", result.turn_id);
+        setTurnStatus(`Turn active: ${result.turn_id?.substring(0, 12) || "processing"}...`);
+        toast.show("Message sent", { variant: "success" });
+
+        // Optimistically add user message to transcript
+        const userMessage: StructuredMessage = {
+          id: `temp-${clientMessageId}`,
+          client_message_id: clientMessageId,
+          turn_id: result.turn_id,
+          role: "user",
+          status: "final",
+          blocks: [{ kind: "text", text: messageText }],
+          timestamp: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, userMessage]);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to send message";
+        toast.error(errorMsg);
+        setTurnStatus("");
+        console.error("Failed to send message:", err);
+        throw err;
+      } finally {
+        setSending(false);
+      }
+    },
+    [selectedSession, client, toast],
+  );
+
+  const renderAvatarHeader = () => {
+    const showAvatars = settings.status === "ready" && settings.values.showAgentAvatars;
+
+    if (showAvatars) {
+      return (
+        <View style={{ padding: 12, borderBottomWidth: 1, borderColor: theme.colors.border }}>
+          <AgentAvatar
+            name="Mayor"
+            provider="Claude Code"
+            model="claude-3.5-sonnet"
+            isActive={true}
+            theme={theme}
+          />
+          {turnStatus ? (
+            <Text
+              style={{ fontSize: 11, opacity: 0.6, marginTop: 4, color: theme.colors.foreground }}
+            >
+              {turnStatus}
+            </Text>
+          ) : null}
+        </View>
       );
-
-      console.log("Message submitted:", result.request_id, "turn:", result.turn_id);
-      setTurnStatus(`Turn active: ${result.turn_id?.substring(0, 12) || "processing"}...`);
-      toast.show("Message sent", { variant: "success" });
-
-      // Optimistically add user message to transcript
-      const userMessage: StructuredMessage = {
-        id: `temp-${clientMessageId}`,
-        client_message_id: clientMessageId,
-        turn_id: result.turn_id,
-        role: "user",
-        status: "final",
-        blocks: [{ kind: "text", text: messageText }],
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, userMessage]);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to send message";
-      toast.error(errorMsg);
-      setTurnStatus("");
-      console.error("Failed to send message:", err);
-      throw err;
-    } finally {
-      setSending(false);
     }
-  }, [selectedSession, client, toast]);
+
+    // Show turn status only when avatars are hidden
+    if (turnStatus) {
+      return (
+        <View style={{ padding: 8, borderBottomWidth: 1, borderColor: theme.colors.border }}>
+          <Text style={{ fontSize: 11, opacity: 0.6, color: theme.colors.foreground }}>
+            {turnStatus}
+          </Text>
+        </View>
+      );
+    }
+
+    return null;
+  };
 
   const renderSidebar = () => (
     <View style={[styles.sidebar, { borderColor: theme.colors.border }]}>
@@ -248,7 +312,9 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
             ]}
             onPress={() => handleRigSelect(rig.id)}
           >
-            <Text style={[styles.sidebarItemName, { color: theme.colors.foreground }]}>{rig.name}</Text>
+            <Text style={[styles.sidebarItemName, { color: theme.colors.foreground }]}>
+              {rig.name}
+            </Text>
             <Text style={[styles.sidebarItemMeta, { color: theme.colors.foreground }]}>
               {rig.branch}
             </Text>
@@ -266,7 +332,10 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
             style={[
               styles.sidebarItem,
               selectedSession?.id === session.id && styles.sidebarItemActive,
-              { backgroundColor: selectedSession?.id === session.id ? theme.colors.surface2 : "transparent" },
+              {
+                backgroundColor:
+                  selectedSession?.id === session.id ? theme.colors.surface2 : "transparent",
+              },
             ]}
             onPress={() => handleSessionSelect(session)}
           >
@@ -289,10 +358,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
   const renderTabBar = () => (
     <View style={[styles.tabBar, { borderColor: theme.colors.border }]}>
       <Pressable
-        style={[
-          styles.tab,
-          tab === "sessions" && { borderBottomColor: theme.colors.primary },
-        ]}
+        style={[styles.tab, tab === "sessions" && { borderBottomColor: theme.colors.primary }]}
         onPress={() => setTab("sessions")}
       >
         <Text
@@ -305,10 +371,7 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
         </Text>
       </Pressable>
       <Pressable
-        style={[
-          styles.tab,
-          tab === "transcript" && { borderBottomColor: theme.colors.primary },
-        ]}
+        style={[styles.tab, tab === "transcript" && { borderBottomColor: theme.colors.primary }]}
         onPress={() => setTab("transcript")}
         disabled={!selectedSession}
       >
@@ -332,21 +395,41 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
       return (
         <ScrollView style={styles.mainContent}>
           <View style={{ padding: 16 }}>
-            <Text style={{ fontSize: 16, fontWeight: "600", marginBottom: 16, color: theme.colors.foreground }}>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "600",
+                marginBottom: 16,
+                color: theme.colors.foreground,
+              }}
+            >
               Active Sessions
             </Text>
             {sessions.map((session) => (
               <Pressable
                 key={session.id}
                 style={[
-                  { padding: 12, borderWidth: 1, borderRadius: 6, marginBottom: 8, borderColor: theme.colors.border },
+                  {
+                    padding: 12,
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    marginBottom: 8,
+                    borderColor: theme.colors.border,
+                  },
                 ]}
                 onPress={() => handleSessionSelect(session)}
               >
                 <Text style={{ fontSize: 14, fontWeight: "500", color: theme.colors.foreground }}>
                   {session.name}
                 </Text>
-                <Text style={{ fontSize: 12, opacity: 0.7, marginTop: 4, color: theme.colors.foreground }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    opacity: 0.7,
+                    marginTop: 4,
+                    color: theme.colors.foreground,
+                  }}
+                >
                   State: {session.state}
                 </Text>
               </Pressable>
@@ -372,21 +455,8 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
 
       return (
         <View style={{ flex: 1 }}>
-          {/* Agent Avatar Header */}
-          <View style={{ padding: 12, borderBottomWidth: 1, borderColor: theme.colors.border }}>
-            <AgentAvatar
-              name="Mayor"
-              provider="Claude Code"
-              model="claude-3.5-sonnet"
-              isActive={true}
-              theme={theme}
-            />
-            {turnStatus ? (
-              <Text style={{ fontSize: 11, opacity: 0.6, marginTop: 4, color: theme.colors.foreground }}>
-                {turnStatus}
-              </Text>
-            ) : null}
-          </View>
+          {/* Agent Avatar Header - conditionally shown based on settings */}
+          {renderAvatarHeader()}
 
           {/* Transcript Viewer */}
           <View style={{ flex: 1 }}>
@@ -418,17 +488,24 @@ export function GasCityStudioPanel({ theme }: Pick<PluginSurfaceProps, "theme">)
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={{ marginTop: 16, color: theme.colors.foreground }}>Loading rigs and sessions...</Text>
+        <Text style={{ marginTop: 16, color: theme.colors.foreground }}>
+          Loading rigs and sessions...
+        </Text>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={[styles.header, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+      <View
+        style={[
+          styles.header,
+          { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+        ]}
+      >
         <Text style={{ color: theme.colors.foreground }}>Gas City Studio</Text>
       </View>
-      
+
       <View style={{ flex: 1, flexDirection: "row" }}>
         {renderSidebar()}
         <View style={{ flex: 1 }}>
