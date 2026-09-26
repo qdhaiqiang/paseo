@@ -1,0 +1,7 @@
+{
+  "id": "gas-city-studio",
+  "requirements": {
+    "paseo": ">=0.8.0"
+  },
+  "description": "Gas City Studio workspace panel for managing rigs, sessions, and multi-agent collaboration with correlation support"
+}

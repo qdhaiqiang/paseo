@@ -1,0 +1,28 @@
+{
+  "name": "@gas-city/plugin-studio",
+  "version": "0.1.0",
+  "description": "Gas City Studio workspace panel for multi-agent collaboration and session management",
+  "homepage": "https://github.com/qdhaiqiang/gascity",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qdhaiqiang/gascity.git",
+    "directory": "gas-city-studio"
+  },
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "client/",
+    "LICENSE"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "peerDependencies": {
+    "@getpaseo/plugin": ">=0.8.0",
+    "react": ">=19",
+    "react-native": ">=0.81"
+  }
+}
